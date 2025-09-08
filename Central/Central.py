@@ -1,6 +1,5 @@
 """
-Actively scans for a peripheral, connects, reads/writes characteristics.
-This is the client side.
+Actively scans for a peripheral, connects, reads/writes characteristics. This is the client side.
 """
 
 
@@ -19,38 +18,16 @@ CHAR_TX_UUID = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef1")  # periphe
 CHAR_RX_UUID = bluetooth.UUID("12345678-1234-5678-1234-56789abcdef2")  # central -> peripheral
 
 
-def parse_entries(data):
-    # data is sequence of 4-byte entries: idx, r, g, b
+def process_list(data):
     if not data:
         return []
-    entries = []
-    if len(data) % 4 != 0:
-        # ignore trailing malformed bytes
-        length = len(data) - (len(data) % 4)
-    else:
-        length = len(data)
-    for i in range(0, length, 4):
-        idx = data[i]
-        r = data[i + 1]
-        g = data[i + 2]
-        b = data[i + 3]
-        entries.append((idx, (r, g, b)))
-    return entries
+    return list(data)
 
 
-def pack_entries(entries):
-    # entries: iterable of (idx, (r,g,b))
-    out = bytearray()
-    for idx, (r, g, b) in entries:
-        # clamp values to 0..255 to avoid wrap-around
-        ri = max(0, min(255, int(r)))
-        gi = max(0, min(255, int(g)))
-        bi = max(0, min(255, int(b)))
-        out.append(idx & 0xFF)
-        out.append(ri)
-        out.append(gi)
-        out.append(bi)
-    return bytes(out)
+def process_value(data):
+    if not data or len(data) < 2:
+        raise struct.error("buffer too small")
+    return struct.unpack("<h", data)[0]
 
 
 async def central_task():
@@ -78,33 +55,31 @@ async def central_task():
     while connection.is_connected():
         # read peripheral->central data
         data = await char_tx.read()
-        entries = parse_entries(data)
+        indices = process_list(data)
 
-        if not entries:
+        if not indices:
             print("Received empty payload, skipping:", data)
             await asyncio.sleep(0.5)
             continue
         try:
-            print("Received entries:", entries)
-            # set colors on the matrix according to entries
+            print("Received indices:", indices)
+            # set color on all indices
             np.fill((0, 0, 0))
-            for idx, (r, g, b) in entries:
+            for idx in indices:
                 if 0 <= idx < len(np):
-                    np[idx] = (r, g, b)
+                    np[idx] = (100, 100, 100)
             np.write()
         except Exception as e:
             print("Error processing payload:", e, "raw:", data)
 
-        # send to peripheral on the dedicated rx characteristic: include colors now
-        # example: reply with four indices and white color
-        reply = [(0, (100, 100, 100)), (2, (100, 100, 100)), (4, (100, 100, 100)), (6, (100, 100, 100))]
-        message = pack_entries(reply)
+        # send to peripheral on the dedicated rx characteristic
+        send_indices = [0,2,4,6]
+        message = bytes(send_indices)
         try:
-            print("try to send:", reply)
+            print("try to send: ", send_indices)
             await char_rx.write(message)
         except Exception as e:
             print("char_rx write failed:", e)
-        print("Sent reply:", reply)
 
         await asyncio.sleep(0.5)
 
