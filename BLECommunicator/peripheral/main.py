@@ -1,41 +1,31 @@
+"""
+PERIPHERAL: wartet, bis sich der andere Pico verbindet, und tauscht Daten aus.
+
+Diese Datei und BLECommunicator.py auf den Pico laden.
+"""
+
 import uasyncio as asyncio
 from BLECommunicator import BLECommunicator
 
-received_data = None # Shared variable to hold received data
+# Muss genau gleich sein wie DEVICE_NAME im central!
+DEVICE_NAME = "Pico2-adv"
 
-async def peripheral_loop():
-    global received_data
-    ble = BLECommunicator(name="Pico2-adv", role="peripheral")
-    await ble.init()
-    count = 0
-    while True:
-        # Receive messages from central
-        data = await ble.receive()
-        if data:
-            print("Received from central:", data)
-            received_data = data  # Store received data
-
-        # Periodically send a reply only if central is connected
-        reply = {"key1": count, "key2": count*2}
-        await ble.send(reply)
-        count += 1
-        await asyncio.sleep(0.5)
-
-async def data_watcher():
-    global received_data
-    while True:
-        if received_data:
-            # Do something with the received data
-            print("Processing received data:", received_data)
-            received_data = None  # Reset after processing
-        else:
-            print("No News")
-        await asyncio.sleep(0.1)
 
 async def main():
-    await asyncio.gather(
-        peripheral_loop(),
-        data_watcher()
-    )
+    ble = BLECommunicator(DEVICE_NAME, "peripheral")
+    await ble.connect()
+
+    counter = 0
+    while True:
+        # Warten, bis der central etwas schickt
+        data = await ble.receive()
+        print("Empfangen:", data)
+        # Hier eigenen Code einfuegen, z.B. LEDs einschalten:
+        # a = data["a"]
+
+        # Antwort senden
+        await ble.send({"x": counter, "y": counter * 2})
+        counter += 1
+
 
 asyncio.run(main())
